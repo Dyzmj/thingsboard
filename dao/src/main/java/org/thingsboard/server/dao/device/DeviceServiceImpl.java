@@ -15,6 +15,7 @@
  */
 package org.thingsboard.server.dao.device;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -27,6 +28,7 @@ import org.springframework.util.CollectionUtils;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.cache.device.DeviceCacheEvictEvent;
 import org.thingsboard.server.cache.device.DeviceCacheKey;
+import org.thingsboard.server.common.data.DataConstants;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.DeviceIdInfo;
 import org.thingsboard.server.common.data.DeviceInfo;
@@ -554,6 +556,11 @@ public class DeviceServiceImpl extends CachedVersionedEntityService<DeviceCacheK
         device.setName(provisionRequest.getDeviceName());
         device.setType(profile.getName());
         device.setTenantId(profile.getTenantId());
+        if (provisionRequest.getGateway() != null && provisionRequest.getGateway()) {
+            ObjectNode additionalInfoNode = JacksonUtil.newObjectNode();
+            additionalInfoNode.put(DataConstants.GATEWAY_PARAMETER, true);
+            device.setAdditionalInfo(additionalInfoNode);
+        }
         Device savedDevice = saveDevice(device);
         if (!StringUtils.isEmpty(provisionRequest.getCredentialsData().getToken()) ||
                 !StringUtils.isEmpty(provisionRequest.getCredentialsData().getX509CertHash()) ||
@@ -612,12 +619,12 @@ public class DeviceServiceImpl extends CachedVersionedEntityService<DeviceCacheK
         }
         try {
             createRelation(tenantId, new EntityRelation(edgeId, deviceId, EntityRelation.CONTAINS_TYPE, RelationTypeGroup.EDGE));
-            eventPublisher.publishEvent(ActionEntityEvent.builder().tenantId(tenantId).edgeId(edgeId).entityId(deviceId)
-                    .actionType(ActionType.ASSIGNED_TO_EDGE).build());
         } catch (Exception e) {
             log.warn("[{}] Failed to create device relation. Edge Id: [{}]", deviceId, edgeId);
             throw new RuntimeException(e);
         }
+        eventPublisher.publishEvent(ActionEntityEvent.builder().tenantId(tenantId).edgeId(edgeId).entityId(deviceId)
+                .actionType(ActionType.ASSIGNED_TO_EDGE).build());
         return device;
     }
 
@@ -633,12 +640,12 @@ public class DeviceServiceImpl extends CachedVersionedEntityService<DeviceCacheK
 
         try {
             deleteRelation(tenantId, new EntityRelation(edgeId, deviceId, EntityRelation.CONTAINS_TYPE, RelationTypeGroup.EDGE));
-            eventPublisher.publishEvent(ActionEntityEvent.builder().tenantId(tenantId).edgeId(edgeId).entityId(deviceId)
-                    .actionType(ActionType.UNASSIGNED_FROM_EDGE).build());
         } catch (Exception e) {
             log.warn("[{}] Failed to delete device relation. Edge Id: [{}]", deviceId, edgeId);
             throw new RuntimeException(e);
         }
+        eventPublisher.publishEvent(ActionEntityEvent.builder().tenantId(tenantId).edgeId(edgeId).entityId(deviceId)
+                .actionType(ActionType.UNASSIGNED_FROM_EDGE).build());
         return device;
     }
 

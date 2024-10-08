@@ -175,7 +175,7 @@
     <div class="tb-form-row" fxLayoutAlign="space-between center">
       <mat-slide-toggle class="mat-slide" formControlName="sendDataToThingsBoard">
         <mat-label>
-          {{ 'gateway.send-data-TB' | translate }}
+          {{ 'gateway.send-data-to-platform' | translate }}
         </mat-label>
       </mat-slide-toggle>
     </div>
@@ -192,6 +192,16 @@
             <div class="tb-flex no-gap">
               <mat-form-field class="tb-flex no-gap" appearance="outline" subscriptSizing="dynamic">
                 <mat-select formControlName="byteOrder">
+                  <mat-option *ngFor="let order of modbusOrderType" [value]="order">{{ order }}</mat-option>
+                </mat-select>
+              </mat-form-field>
+            </div>
+          </div>
+          <div class="tb-form-row column-xs" fxLayoutAlign="space-between center">
+            <div class="fixed-title-width" tb-hint-tooltip-icon="{{ 'gateway.hints.modbus.word-order' | translate }}" translate>gateway.word-order</div>
+            <div class="tb-flex no-gap">
+              <mat-form-field class="tb-flex no-gap" appearance="outline" subscriptSizing="dynamic">
+                <mat-select formControlName="wordOrder">
                   <mat-option *ngFor="let order of modbusOrderType" [value]="order">{{ order }}</mat-option>
                 </mat-select>
               </mat-form-field>

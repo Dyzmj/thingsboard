@@ -22,7 +22,8 @@ import {
   EventEmitter,
   Inject,
   Injector,
-  Input, NgZone,
+  Input,
+  NgZone,
   OnChanges,
   Output,
   Renderer2,
@@ -126,13 +127,14 @@ export class TbMarkdownComponent implements OnChanges {
       const preHtml = preElements.item(i).outerHTML.replace('ngnonbindable=""', 'ngNonBindable');
       template = template.replace(matches[i][0], preHtml);
     }
-    template = this.sanitizeCurlyBraces(template);
+    template = this.sanitize(template);
     this.markdownContainer.clear();
     let styles: string[] = [];
     let readyObservable: Observable<void>;
     if (this.applyDefaultMarkdownStyle) {
       if (!defaultMarkdownStyle) {
-        defaultMarkdownStyle = deepClone(TbMarkdownComponent['ɵcmp'].styles)[0].replace(/\[_nghost\-%COMP%\]/g, '')
+        const compDef = this.dynamicComponentFactoryService.getComponentDef(TbMarkdownComponent);
+        defaultMarkdownStyle = deepClone(compDef.styles[0]).replace(/\[_nghost\-%COMP%\]/g, '')
           .replace(/\[_ngcontent\-%COMP%\]/g, '');
       }
       styles.push(defaultMarkdownStyle);
@@ -160,14 +162,14 @@ export class TbMarkdownComponent implements OnChanges {
         },
         template,
         compileModules,
-        true, 1, styles
-      ).subscribe((componentData) => {
-          this.tbMarkdownInstanceComponentType = componentData.componentType;
+        true, styles
+      ).subscribe((componentType) => {
+          this.tbMarkdownInstanceComponentType = componentType;
           const injector: Injector = Injector.create({providers: [], parent: this.markdownContainer.injector});
           try {
             this.tbMarkdownInstanceComponentRef =
               this.markdownContainer.createComponent(this.tbMarkdownInstanceComponentType,
-                {index: 0, injector, ngModuleRef: componentData.componentModuleRef});
+                {index: 0, injector});
             if (this.context) {
               for (const propName of Object.keys(this.context)) {
                 this.tbMarkdownInstanceComponentRef.instance[propName] = this.context[propName];
@@ -257,8 +259,8 @@ export class TbMarkdownComponent implements OnChanges {
     }
   }
 
-  private sanitizeCurlyBraces(template: string): string {
-    return template.replace(/{/g, '&#123;').replace(/}/g, '&#125;');
+  private sanitize(template: string): string {
+    return template.replace(/{/g, '&#123;').replace(/}/g, '&#125;').replace(/@/g, '&#64;');
   }
 
   private destroyMarkdownInstanceResources() {

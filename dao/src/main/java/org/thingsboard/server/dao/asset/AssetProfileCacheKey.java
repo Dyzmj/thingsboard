@@ -16,14 +16,16 @@
 package org.thingsboard.server.dao.asset;
 
 import lombok.Data;
+import org.thingsboard.server.cache.VersionedCacheKey;
 import org.thingsboard.server.common.data.id.AssetProfileId;
 import org.thingsboard.server.common.data.id.TenantId;
 
-import java.io.Serializable;
+import java.io.Serial;
 
 @Data
-public class AssetProfileCacheKey implements Serializable {
+public class AssetProfileCacheKey implements VersionedCacheKey {
 
+    @Serial
     private static final long serialVersionUID = 8220455917177676472L;
 
     private final TenantId tenantId;
@@ -60,4 +62,10 @@ public class AssetProfileCacheKey implements Serializable {
             return tenantId + "_" + name;
         }
     }
+
+    @Override
+    public boolean isVersioned() {
+        return assetProfileId != null;
+    }
+
 }

@@ -78,7 +78,7 @@ import * as RxJs from 'rxjs';
 import * as RxJsOperators from 'rxjs/operators';
 import * as TranslateCore from '@ngx-translate/core';
 import * as MatDateTimePicker from '@mat-datetimepicker/core';
-import * as _moment from 'moment';
+import _moment from 'moment';
 import * as tslib from 'tslib';
 
 import * as TbCore from '@core/public-api';
@@ -335,8 +335,9 @@ import * as AssetProfileAutocompleteComponent from '@home/components/profile/ass
 import * as RuleChainSelectComponent from '@shared/components/rule-chain/rule-chain-select.component';
 
 import { IModulesMap } from '@modules/common/modules-map.models';
-
-declare const System;
+import { TimezoneComponent } from '@shared/components/time/timezone.component';
+import { TimezonePanelComponent } from '@shared/components/time/timezone-panel.component';
+import { DatapointsLimitComponent } from '@shared/components/time/datapoints-limit.component';
 
 class ModulesMap implements IModulesMap {
 
@@ -466,6 +467,9 @@ class ModulesMap implements IModulesMap {
     '@shared/components/time/datetime-period.component': DatetimePeriodComponent,
     '@shared/components/time/datetime.component': DatetimeComponent,
     '@shared/components/time/timezone-select.component': TimezoneSelectComponent,
+    '@shared/components/time/timezone.component': TimezoneComponent,
+    '@shared/components/time/timezone-panel.component': TimezonePanelComponent,
+    '@shared/components/time/datapoints-limit': DatapointsLimitComponent,
     '@shared/components/value-input.component': ValueInputComponent,
     '@shared/components/dashboard-autocomplete.component': DashboardAutocompleteComponent,
     '@shared/components/entity/entity-subtype-autocomplete.component': EntitySubTypeAutocompleteComponent,
@@ -667,7 +671,7 @@ class ModulesMap implements IModulesMap {
 
   init() {
     if (!this.initialized) {
-      System.constructor.prototype.resolve = (id) => {
+      System.constructor.prototype.resolve = (id: string) => {
         try {
           if (this.modulesMap[id]) {
             return 'app:' + id;
@@ -682,7 +686,7 @@ class ModulesMap implements IModulesMap {
         System.set('app:' + moduleId, this.modulesMap[moduleId]);
       }
       System.constructor.prototype.shouldFetch = (url: string) => url.endsWith('/download');
-      System.constructor.prototype.fetch = (url, options: RequestInit & {meta?: any}) => {
+      System.constructor.prototype.fetch = (url: string, options: RequestInit & {meta?: any}) => {
         if (options?.meta?.additionalHeaders) {
           options.headers = { ...options.headers, ...options.meta.additionalHeaders };
         }

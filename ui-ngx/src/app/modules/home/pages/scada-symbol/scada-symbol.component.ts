@@ -78,7 +78,6 @@ import {
   SaveWidgetTypeAsDialogResult
 } from '@home/pages/widget/save-widget-type-as-dialog.component';
 import { WidgetService } from '@core/http/widget.service';
-import { de } from 'date-fns/locale';
 
 @Component({
   selector: 'tb-scada-symbol',
@@ -134,6 +133,8 @@ export class ScadaSymbolComponent extends PageComponent
   editObjectCallbacks: ScadaSymbolEditObjectCallbacks = this;
 
   symbolEditorDirty = false;
+
+  symbolEditorValid = true;
 
   private previewScadaSymbolObjectSettings: ScadaSymbolObjectSettings;
 
@@ -209,6 +210,10 @@ export class ScadaSymbolComponent extends PageComponent
 
   onApplyScadaSymbolConfig() {
     if (this.scadaSymbolFormGroup.valid) {
+      if (this.symbolEditor.editorMode === 'xml') {
+        const tags = this.symbolEditor.getTags();
+        this.editObjectCallbacks.tagsUpdated(tags);
+      }
       const metadata: ScadaSymbolMetadata = this.scadaSymbolFormGroup.get('metadata').value;
       const scadaSymbolContent = this.prepareScadaSymbolContent(metadata);
       const file = createFileFromContent(scadaSymbolContent, this.symbolData.imageResource.fileName,
@@ -338,6 +343,10 @@ export class ScadaSymbolComponent extends PageComponent
     this.symbolEditorDirty = dirty;
   }
 
+  onSymbolEditObjectValid(valid: boolean) {
+    this.symbolEditorValid = valid;
+  }
+
   updateScadaSymbol() {
     this.dialog.open<UploadImageDialogComponent, UploadImageDialogData,
       UploadImageDialogResult>(UploadImageDialogComponent, {
@@ -354,6 +363,7 @@ export class ScadaSymbolComponent extends PageComponent
           scadaSymbolContent: this.symbolData.scadaSymbolContent
         };
         this.symbolEditorDirty = true;
+        this.symbolEditorValid = true;
       }
     });
   }
@@ -471,6 +481,7 @@ export class ScadaSymbolComponent extends PageComponent
     }
     this.scadaSymbolFormGroup.markAsPristine();
     this.symbolEditorDirty = false;
+    this.symbolEditorValid = true;
     this.cd.markForCheck();
   }
 }

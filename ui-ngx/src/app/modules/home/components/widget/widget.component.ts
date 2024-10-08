@@ -15,7 +15,6 @@
 ///
 
 import {
-  AfterViewInit,
   ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
@@ -39,7 +38,8 @@ import {
 } from '@angular/core';
 import { DashboardWidget } from '@home/models/dashboard-component.models';
 import {
-  Widget, WidgetAction,
+  Widget,
+  WidgetAction,
   WidgetActionDescriptor,
   widgetActionSources,
   WidgetActionType,
@@ -57,7 +57,8 @@ import { WidgetService } from '@core/http/widget.service';
 import { UtilsService } from '@core/services/utils.service';
 import { forkJoin, Observable, of, ReplaySubject, Subscription, throwError } from 'rxjs';
 import {
-  deepClone, guid,
+  deepClone,
+  guid,
   insertVariable,
   isDefined,
   isNotEmptyStr,
@@ -87,7 +88,12 @@ import {
 import { EntityId } from '@shared/models/id/entity-id';
 import { ActivatedRoute, Router } from '@angular/router';
 import cssjs from '@core/css/css';
-import { ModulesWithFactories, ResourcesService } from '@core/services/resources.service';
+import {
+  flatModulesWithComponents,
+  ModulesWithComponents,
+  modulesWithComponentsToTypes,
+  ResourcesService
+} from '@core/services/resources.service';
 import { catchError, map, switchMap } from 'rxjs/operators';
 import { ActionNotificationShow } from '@core/notification/notification.actions';
 import { TimeService } from '@core/services/time.service';
@@ -100,12 +106,11 @@ import { DashboardService } from '@core/http/dashboard.service';
 import { WidgetSubscription } from '@core/api/widget-subscription';
 import { EntityService } from '@core/http/entity.service';
 import { ServicesMap } from '@home/models/services.map';
-import { ResizeObserver } from '@juggle/resize-observer';
 import { EntityDataService } from '@core/api/entity-data.service';
 import { TranslateService } from '@ngx-translate/core';
 import { NotificationType } from '@core/notification/notification.models';
 import { AlarmDataService } from '@core/api/alarm-data.service';
-import { MatDialog } from '@angular/material/dialog';
+import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { ComponentType } from '@angular/cdk/portal';
 import { EMBED_DASHBOARD_DIALOG_TOKEN } from '@home/components/widget/dialog/embed-dashboard-dialog-token';
 import { MobileService } from '@core/services/mobile.service';
@@ -123,7 +128,7 @@ import { DashboardUtilsService } from '@core/services/dashboard-utils.service';
   encapsulation: ViewEncapsulation.None,
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class WidgetComponent extends PageComponent implements OnInit, AfterViewInit, OnChanges, OnDestroy {
+export class WidgetComponent extends PageComponent implements OnInit, OnChanges, OnDestroy {
 
   @Input()
   widgetTitlePanel: TemplateRef<any>;
@@ -325,9 +330,6 @@ export class WidgetComponent extends PageComponent implements OnInit, AfterViewI
     } else {
       this.noDataDisplayMessageText = this.translate.instant('widget.no-data');
     }
-  }
-
-  ngAfterViewInit(): void {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -547,7 +549,9 @@ export class WidgetComponent extends PageComponent implements OnInit, AfterViewI
           }
         });
       } else {
-        this.onInit(true);
+        this.ngZone.run(() => {
+          this.onInit(true);
+        });
       }
     }
   }
@@ -760,7 +764,7 @@ export class WidgetComponent extends PageComponent implements OnInit, AfterViewI
 
       try {
         this.dynamicWidgetComponentRef = this.widgetContentContainer.createComponent(this.widgetInfo.componentType,
-          {index: 0, injector, ngModuleRef: this.widgetInfo.componentModuleRef});
+          {index: 0, injector});
         this.cd.detectChanges();
       } catch (e) {
         if (this.dynamicWidgetComponentRef) {
@@ -1128,7 +1132,7 @@ export class WidgetComponent extends PageComponent implements OnInit, AfterViewI
                 }
                 const customActionPrettyFunction = new Function('$event', 'widgetContext', 'entityId',
                   'entityName', 'htmlTemplate', 'additionalParams', 'entityLabel', customPrettyFunction);
-                this.widgetContext.customDialog.setAdditionalModules(descriptor.customModules);
+                this.widgetContext.customDialog.setAdditionalImports(descriptor.customImports);
                 customActionPrettyFunction($event, this.widgetContext, entityId, entityName, htmlTemplate, additionalParams, entityLabel);
               } catch (e) {
                 console.error(e);
@@ -1365,7 +1369,7 @@ export class WidgetComponent extends PageComponent implements OnInit, AfterViewI
   }
 
   private openDashboardStateInSeparateDialog(targetDashboardStateId: string, params?: StateParams, dialogTitle?: string,
-                                             hideDashboardToolbar = true, dialogWidth?: number, dialogHeight?: number) {
+                                             hideDashboardToolbar = true, dialogWidth?: number, dialogHeight?: number): MatDialogRef<any> {
     const dashboard = deepClone(this.widgetContext.stateController.dashboardCtrl.dashboardCtx.getDashboard());
     const stateObject: StateObject = {};
     stateObject.params = params;
@@ -1413,6 +1417,7 @@ export class WidgetComponent extends PageComponent implements OnInit, AfterViewI
       }
     });
     this.cd.markForCheck();
+    return dashboard.dialogRef;
   }
 
   private elementClick($event: Event) {
@@ -1457,7 +1462,7 @@ export class WidgetComponent extends PageComponent implements OnInit, AfterViewI
   private loadCustomActionResources(actionNamespace: string, customCss: string, customResources: Array<WidgetResource>,
                                     actionDescriptor: WidgetAction): Observable<any> {
     const resourceTasks: Observable<string>[] = [];
-    const modulesTasks: Observable<ModulesWithFactories | string>[] = [];
+    const modulesTasks: Observable<ModulesWithComponents | string>[] = [];
 
     if (isDefined(customCss) && customCss.length > 0) {
       this.cssParser.cssPreviewNamespace = actionNamespace;
@@ -1468,7 +1473,7 @@ export class WidgetComponent extends PageComponent implements OnInit, AfterViewI
       customResources.forEach(resource => {
         if (resource.isModule) {
           modulesTasks.push(
-            this.resources.loadFactories(resource.url, this.modulesMap).pipe(
+            this.resources.loadModulesWithComponents(resource.url, this.modulesMap).pipe(
               catchError((e: Error) => of(e?.message ? e.message : `Failed to load custom action resource module: '${resource.url}'`))
             )
           );
@@ -1482,28 +1487,24 @@ export class WidgetComponent extends PageComponent implements OnInit, AfterViewI
       });
 
       if (modulesTasks.length) {
-        const modulesObservable: Observable<string | Type<any>[]> = forkJoin(modulesTasks).pipe(
+        const importsObservable: Observable<string | Type<any>[]> = forkJoin(modulesTasks).pipe(
           map(res => {
             const msg = res.find(r => typeof r === 'string');
             if (msg) {
               return msg as string;
             } else {
-              const modulesWithFactoriesList = res as ModulesWithFactories[];
-              const resModulesWithFactories: ModulesWithFactories = {
-                modules: modulesWithFactoriesList.map(mf => mf.modules).flat(),
-                factories: modulesWithFactoriesList.map(mf => mf.factories).flat()
-              };
-              return resModulesWithFactories.modules;
+              const modulesWithComponents = flatModulesWithComponents(res as ModulesWithComponents[]);
+              return modulesWithComponentsToTypes(modulesWithComponents);
             }
           })
         );
 
-        resourceTasks.push(modulesObservable.pipe(
-          map((resolvedModules) => {
-            if (typeof resolvedModules === 'string') {
-              return resolvedModules;
+        resourceTasks.push(importsObservable.pipe(
+          map((resolvedImports) => {
+            if (typeof resolvedImports === 'string') {
+              return resolvedImports;
             } else {
-              actionDescriptor.customModules = resolvedModules;
+              actionDescriptor.customImports = resolvedImports;
               return null;
             }
           })));

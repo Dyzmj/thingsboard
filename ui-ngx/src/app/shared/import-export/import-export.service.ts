@@ -81,6 +81,7 @@ import { selectUserSettingsProperty } from '@core/auth/auth.selectors';
 import { ActionPreferencesPutUserSettings } from '@core/auth/auth.actions';
 import { ExportableEntity } from '@shared/models/base-data';
 import { EntityId } from '@shared/models/id/entity-id';
+import { Customer } from '@shared/models/customer.model';
 
 export type editMissingAliasesFunction = (widgets: Array<Widget>, isSingleWidget: boolean,
                                           customTitle: string, missingEntityAliases: EntityAliases) => Observable<EntityAliases>;
@@ -360,25 +361,27 @@ export class ImportExportService {
     });
   }
 
-  public exportEntity(entityData: EntityInfoData): void {
+  public exportEntity(entityData: EntityInfoData | RuleChainMetaData): void {
+    const id = (entityData as EntityInfoData).id ?? (entityData as RuleChainMetaData).ruleChainId;
+    let fileName = (entityData as EntityInfoData).name;
     let preparedData;
-    switch (entityData.id.entityType) {
+    switch (id.entityType) {
       case EntityType.DEVICE_PROFILE:
       case EntityType.ASSET_PROFILE:
         preparedData = this.prepareProfileExport(entityData as DeviceProfile | AssetProfile);
         break;
       case EntityType.RULE_CHAIN:
-        this.ruleChainService.getRuleChainMetadata(entityData.id.id)
+        forkJoin([this.ruleChainService.getRuleChainMetadata(id.id), this.ruleChainService.getRuleChain(id.id)])
           .pipe(
             take(1),
-            map((ruleChainMetaData) => {
+            map(([ruleChainMetaData, ruleChain]) => {
               const ruleChainExport: RuleChainImport = {
-                ruleChain: this.prepareRuleChain(entityData as RuleChain),
+                ruleChain: this.prepareRuleChain(ruleChain),
                 metadata: this.prepareRuleChainMetaData(ruleChainMetaData)
               };
               return ruleChainExport;
             }))
-          .subscribe(ruleChainData => this.exportToPc(ruleChainData, entityData.name));
+          .subscribe(this.onRuleChainExported());
         return;
       case EntityType.WIDGETS_BUNDLE:
         this.exportSelectedWidgetsBundle(entityData as WidgetsBundle);
@@ -386,10 +389,14 @@ export class ImportExportService {
       case EntityType.DASHBOARD:
         preparedData = this.prepareDashboardExport(entityData as Dashboard);
         break;
+      case EntityType.CUSTOMER:
+        fileName = (entityData as Customer).title;
+        preparedData = this.prepareExport(entityData);
+        break;
       default:
         preparedData = this.prepareExport(entityData);
     }
-    this.exportToPc(preparedData, entityData.name);
+    this.exportToPc(preparedData, fileName);
   }
 
   private exportSelectedWidgetsBundle(widgetsBundle: WidgetsBundle): void {
@@ -584,8 +591,12 @@ export class ImportExportService {
           return ruleChainExport;
         })
       ))
-    ).subscribe({
-      next: (ruleChainExport) => {
+    ).subscribe(this.onRuleChainExported());
+  }
+
+  private onRuleChainExported() {
+    return {
+      next: (ruleChainExport: RuleChainImport) => {
         let name = ruleChainExport.ruleChain.name;
         name = name.toLowerCase().replace(/\W/g, '_');
         this.exportToPc(ruleChainExport, name);
@@ -593,7 +604,7 @@ export class ImportExportService {
       error: (e) => {
         this.handleExportError(e, 'rulechain.export-failed-error');
       }
-    });
+    };
   }
 
   public importRuleChain(expectedRuleChainType: RuleChainType): Observable<RuleChainImport> {

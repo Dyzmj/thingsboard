@@ -40,17 +40,21 @@ import {
   Validator,
 } from '@angular/forms';
 import {
+  AttributeUpdate,
   ConnectorMapping,
+  ConnectRequest,
   ConverterConnectorMapping,
   ConvertorTypeTranslationsMap,
   DeviceConnectorMapping,
+  DisconnectRequest,
   MappingInfo,
   MappingType,
   MappingTypeTranslationsMap,
   MappingValue,
-  RequestMappingData,
+  RequestMappingValue,
   RequestType,
-  RequestTypesTranslationsMap
+  RequestTypesTranslationsMap,
+  ServerSideRpc
 } from '@home/components/widget/lib/gateway/gateway-widget.models';
 import { MappingDialogComponent } from '@home/components/widget/lib/gateway/dialog/mapping-dialog.component';
 import { isDefinedAndNotNull, isUndefinedOrNull } from '@core/utils';
@@ -252,23 +256,25 @@ export class MappingTableComponent implements ControlValueAccessor, Validator, A
   private getMappingValue(value: ConnectorMapping): MappingValue {
     switch (this.mappingType) {
       case MappingType.DATA:
+        const converterType = ConvertorTypeTranslationsMap.get((value as ConverterConnectorMapping).converter?.type);
         return {
           topicFilter: (value as ConverterConnectorMapping).topicFilter,
           QoS: (value as ConverterConnectorMapping).subscriptionQos,
-          converter: this.translate.instant(ConvertorTypeTranslationsMap.get((value as ConverterConnectorMapping).converter?.type) || '')
+          converter: converterType ? this.translate.instant(converterType) : ''
         };
       case MappingType.REQUESTS:
         let details: string;
-        if ((value as RequestMappingData).requestType === RequestType.ATTRIBUTE_UPDATE) {
-          details = (value as RequestMappingData).requestValue.attributeFilter;
-        } else if ((value as RequestMappingData).requestType === RequestType.SERVER_SIDE_RPC) {
-          details = (value as RequestMappingData).requestValue.methodFilter;
+        const requestValue = value as RequestMappingValue;
+        if (requestValue.requestType === RequestType.ATTRIBUTE_UPDATE) {
+          details = (requestValue.requestValue as AttributeUpdate).attributeFilter;
+        } else if (requestValue.requestType === RequestType.SERVER_SIDE_RPC) {
+          details = (requestValue.requestValue as ServerSideRpc).methodFilter;
         } else {
-          details = (value as RequestMappingData).requestValue.topicFilter;
+          details = (requestValue.requestValue as ConnectRequest | DisconnectRequest).topicFilter;
         }
         return {
-          requestType: (value as RequestMappingData).requestType,
-          type: this.translate.instant(RequestTypesTranslationsMap.get((value as RequestMappingData).requestType)),
+          requestType: (value as RequestMappingValue).requestType,
+          type: this.translate.instant(RequestTypesTranslationsMap.get((value as RequestMappingValue).requestType)),
           details
         };
       case MappingType.OPCUA:

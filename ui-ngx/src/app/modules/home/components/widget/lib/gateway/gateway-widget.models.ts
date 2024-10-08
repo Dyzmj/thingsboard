@@ -14,13 +14,12 @@
 /// limitations under the License.
 ///
 
-import { ResourcesService } from '@core/services/resources.service';
-import { Observable } from 'rxjs';
 import { helpBaseUrl, ValueTypeData } from '@shared/models/constants';
 import { AttributeData } from '@shared/models/telemetry/telemetry.models';
 
 export const noLeadTrailSpacesRegex = /^\S+(?: \S+)*$/;
 export const integerRegex = /^[-+]?\d+$/;
+export const nonZeroFloat = /^-?(?!0(\.0+)?$)\d+(\.\d+)?$/;
 
 export enum StorageTypes {
   MEMORY = 'memory',
@@ -38,7 +37,8 @@ export enum GatewayLogLevel {
   ERROR = 'ERROR',
   WARNING = 'WARNING',
   INFO = 'INFO',
-  DEBUG = 'DEBUG'
+  DEBUG = 'DEBUG',
+  TRACE = 'TRACE'
 }
 
 export enum PortLimits {
@@ -114,21 +114,33 @@ export interface GatewayAttributeData extends AttributeData {
   skipSync?: boolean;
 }
 
-export interface GatewayConnector {
+export interface GatewayConnectorBase {
   name: string;
   type: ConnectorType;
   configuration?: string;
-  configurationJson: ConnectorBaseConfig;
-  basicConfig?: ConnectorBaseConfig;
   logLevel: string;
   key?: string;
   class?: string;
-  mode?: ConnectorConfigurationModes;
+  mode?: ConfigurationModes;
+  configVersion?: string;
+  reportStrategy?: ReportStrategyConfig;
+  sendDataOnlyOnChange?: boolean;
+  ts?: number;
+}
+
+export interface GatewayConnector<BaseConfig = ConnectorBaseConfig> extends GatewayConnectorBase {
+  configurationJson: BaseConfig;
+  basicConfig?: BaseConfig;
+}
+
+export interface GatewayVersionedDefaultConfig {
+  legacy: GatewayConnector<ConnectorLegacyConfig>;
+  '3.5.2': GatewayConnector<ConnectorBaseConfig_v3_5_2>;
 }
 
 export interface DataMapping {
   topicFilter: string;
-  QoS: string;
+  QoS: string | number;
   converter: Converter;
 }
 
@@ -180,34 +192,76 @@ export interface ConnectorSecurity {
   mode?: ModeType;
 }
 
-export type ConnectorMapping = DeviceConnectorMapping | RequestMappingData | ConverterConnectorMapping;
+export enum GatewayVersion {
+  Current = '3.5.2',
+  Legacy = 'legacy'
+}
+
+export type ConnectorMapping = DeviceConnectorMapping | RequestMappingValue | ConverterConnectorMapping;
 
 export type ConnectorMappingFormValue = DeviceConnectorMapping | RequestMappingFormValue | ConverterMappingFormValue;
 
-export type ConnectorBaseConfig = ConnectorBaseInfo | MQTTBasicConfig | OPCBasicConfig | ModbusBasicConfig;
+export type ConnectorBaseConfig = ConnectorBaseConfig_v3_5_2 | ConnectorLegacyConfig;
+
+export type ConnectorLegacyConfig = ConnectorBaseInfo | MQTTLegacyBasicConfig | OPCLegacyBasicConfig | ModbusBasicConfig;
+
+export type ConnectorBaseConfig_v3_5_2 = ConnectorBaseInfo | MQTTBasicConfig_v3_5_2 | OPCBasicConfig_v3_5_2;
 
 export interface ConnectorBaseInfo {
   name: string;
   id: string;
   enableRemoteLogging: boolean;
   logLevel: GatewayLogLevel;
+  configVersion: string | number;
+  reportStrategy?: ReportStrategyConfig;
 }
 
-export interface MQTTBasicConfig {
-  dataMapping: ConverterConnectorMapping[];
-  requestsMapping: Record<RequestType, RequestMappingData[]> | RequestMappingData[];
+export type MQTTBasicConfig = MQTTBasicConfig_v3_5_2 | MQTTLegacyBasicConfig;
+
+export interface MQTTBasicConfig_v3_5_2 {
+  mapping: ConverterConnectorMapping[];
+  requestsMapping: Record<RequestType, RequestMappingData[] | RequestMappingValue[]> | RequestMappingData[] | RequestMappingValue[];
   broker: BrokerConfig;
   workers?: WorkersConfig;
 }
 
-export interface OPCBasicConfig {
+export interface MQTTLegacyBasicConfig {
+  mapping: LegacyConverterConnectorMapping[];
+  broker: BrokerConfig;
+  workers?: WorkersConfig;
+  connectRequests: LegacyRequestMappingData[];
+  disconnectRequests: LegacyRequestMappingData[];
+  attributeRequests: LegacyRequestMappingData[];
+  attributeUpdates: LegacyRequestMappingData[];
+  serverSideRpc: LegacyRequestMappingData[];
+}
+
+export type OPCBasicConfig = OPCBasicConfig_v3_5_2 | OPCLegacyBasicConfig;
+
+export interface OPCBasicConfig_v3_5_2 {
   mapping: DeviceConnectorMapping[];
   server: ServerConfig;
 }
 
-export interface ModbusBasicConfig {
+export interface OPCLegacyBasicConfig {
+  server: LegacyServerConfig;
+}
+
+export interface LegacyServerConfig extends Omit<ServerConfig, 'enableSubscriptions'> {
+  mapping: LegacyDeviceConnectorMapping[];
+  disableSubscriptions: boolean;
+}
+
+export type ModbusBasicConfig = ModbusBasicConfig_v3_5_2 | ModbusLegacyBasicConfig;
+
+export interface ModbusBasicConfig_v3_5_2 {
   master: ModbusMasterConfig;
   slave: ModbusSlave;
+}
+
+export interface ModbusLegacyBasicConfig {
+  master: ModbusMasterConfig<LegacySlaveConfig>;
+  slave: ModbusLegacySlave;
 }
 
 export interface WorkersConfig {
@@ -215,11 +269,11 @@ export interface WorkersConfig {
   maxMessageNumberPerWorker: number;
 }
 
-interface DeviceInfo {
+export interface ConnectorDeviceInfo {
   deviceNameExpression: string;
-  deviceNameExpressionSource: string;
+  deviceNameExpressionSource: SourceType | OPCUaSourceType;
   deviceProfileExpression: string;
-  deviceProfileExpressionSource: string;
+  deviceProfileExpressionSource: SourceType | OPCUaSourceType;
 }
 
 export interface Attribute {
@@ -228,20 +282,35 @@ export interface Attribute {
   value: string;
 }
 
+export interface LegacyAttribute {
+  key: string;
+  path: string;
+}
+
 export interface Timeseries {
   key: string;
   type: string;
   value: string;
 }
 
-interface RpcArgument {
+export interface LegacyTimeseries {
+  key: string;
+  path: string;
+}
+
+export interface RpcArgument {
   type: string;
-  value: number;
+  value: number | string | boolean;
 }
 
 export interface RpcMethod {
   method: string;
   arguments: RpcArgument[];
+}
+
+export interface LegacyRpcMethod {
+  method: string;
+  arguments: unknown[];
 }
 
 export interface AttributesUpdate {
@@ -250,20 +319,46 @@ export interface AttributesUpdate {
   value: string;
 }
 
+export interface LegacyDeviceAttributeUpdate {
+  attributeOnThingsBoard: string;
+  attributeOnDevice: string;
+}
+
 export interface Converter {
   type: ConvertorType;
-  deviceNameJsonExpression: string;
-  deviceTypeJsonExpression: string;
+  deviceInfo?: ConnectorDeviceInfo;
   sendDataOnlyOnChange: boolean;
   timeout: number;
-  attributes: Attribute[];
-  timeseries: Timeseries[];
+  attributes?: Attribute[];
+  timeseries?: Timeseries[];
+  extension?: string;
+  cached?: boolean;
+  extensionConfig?: Record<string, number>;
+}
+
+export interface LegacyConverter extends Converter {
+  deviceNameJsonExpression?: string;
+  deviceTypeJsonExpression?: string;
+  deviceNameTopicExpression?: string;
+  deviceTypeTopicExpression?: string;
+  deviceNameExpression?: string;
+  deviceNameExpressionSource?: string;
+  deviceTypeExpression?: string;
+  deviceProfileExpression?: string;
+  deviceProfileExpressionSource?: string;
+  ['extension-config']?: Record<string, unknown>;
 }
 
 export interface ConverterConnectorMapping {
   topicFilter: string;
-  subscriptionQos?: string;
+  subscriptionQos?: string | number;
   converter: Converter;
+}
+
+export interface LegacyConverterConnectorMapping {
+  topicFilter: string;
+  subscriptionQos?: string | number;
+  converter: LegacyConverter;
 }
 
 export type ConverterMappingFormValue = Omit<ConverterConnectorMapping, 'converter'> & {
@@ -274,12 +369,22 @@ export type ConverterMappingFormValue = Omit<ConverterConnectorMapping, 'convert
 
 export interface DeviceConnectorMapping {
   deviceNodePattern: string;
-  deviceNodeSource: string;
-  deviceInfo: DeviceInfo;
+  deviceNodeSource: OPCUaSourceType;
+  deviceInfo: ConnectorDeviceInfo;
   attributes?: Attribute[];
   timeseries?: Timeseries[];
   rpc_methods?: RpcMethod[];
   attributes_updates?: AttributesUpdate[];
+}
+
+export interface LegacyDeviceConnectorMapping {
+  deviceNamePattern: string;
+  deviceNodePattern: string;
+  deviceTypePattern: string;
+  attributes?: LegacyAttribute[];
+  timeseries?: LegacyTimeseries[];
+  rpc_methods?: LegacyRpcMethod[];
+  attributes_updates?: LegacyDeviceAttributeUpdate[];
 }
 
 export enum ConnectorType {
@@ -440,6 +545,37 @@ export interface RPCTemplateConfig {
   [key: string]: any;
 }
 
+export interface RPCTemplateConfigMQTT {
+  methodFilter: string;
+  requestTopicExpression: string;
+  responseTopicExpression?: string;
+  responseTimeout?: number;
+  valueExpression: string;
+  withResponse: boolean;
+}
+
+export interface RPCTemplateConfigModbus {
+  tag: string;
+  type: ModbusDataType;
+  functionCode?: number;
+  objectsCount: number;
+  address: number;
+  value?: string;
+}
+
+export interface RPCTemplateConfigOPC {
+  method: string;
+  arguments: RpcArgument[];
+}
+
+export interface OPCTypeValue {
+  type: MappingValueType;
+  boolean?: boolean;
+  double?: number;
+  integer?: number;
+  string?: string;
+}
+
 export interface SaveRPCTemplateData {
   config: RPCTemplateConfig;
   templates: Array<RPCTemplate>;
@@ -460,6 +596,7 @@ export interface GatewayLogData {
 
 export interface AddConnectorConfigData {
   dataSourceData: Array<any>;
+  gatewayVersion: string;
 }
 
 export interface CreatedConnectorConfigData {
@@ -488,12 +625,13 @@ export interface MappingInfo {
   buttonTitle: string;
 }
 
-export interface ModbusSlaveInfo {
-  value: SlaveConfig;
+export interface ModbusSlaveInfo<Slave = SlaveConfig> {
+  value: Slave;
   buttonTitle: string;
+  hideNewFields: boolean;
 }
 
-export enum ConnectorConfigurationModes {
+export enum ConfigurationModes {
   BASIC = 'basic',
   ADVANCED = 'advanced'
 }
@@ -503,6 +641,26 @@ export enum SecurityType {
   BASIC = 'basic',
   CERTIFICATES = 'certificates'
 }
+
+export enum ReportStrategyType {
+  OnChange = 'ON_CHANGE',
+  OnReportPeriod = 'ON_REPORT_PERIOD',
+  OnChangeOrReportPeriod = 'ON_CHANGE_OR_REPORT_PERIOD'
+}
+
+export enum ReportStrategyDefaultValue {
+  Connector = 60000,
+  Device = 30000,
+  Key = 15000
+}
+
+export const ReportStrategyTypeTranslationsMap = new Map<ReportStrategyType, string>(
+  [
+    [ReportStrategyType.OnChange, 'gateway.report-strategy.on-change'],
+    [ReportStrategyType.OnReportPeriod, 'gateway.report-strategy.on-report-period'],
+    [ReportStrategyType.OnChangeOrReportPeriod, 'gateway.report-strategy.on-change-or-report-period']
+  ]
+);
 
 export enum ModeType {
   NONE = 'None',
@@ -562,7 +720,7 @@ export const HelpLinkByMappingTypeMap = new Map<MappingType, string>(
   [
     [MappingType.DATA, helpBaseUrl + '/docs/iot-gateway/config/mqtt/#section-mapping'],
     [MappingType.OPCUA, helpBaseUrl + '/docs/iot-gateway/config/opc-ua/#section-mapping'],
-    [MappingType.REQUESTS, helpBaseUrl + '/docs/iot-gateway/config/mqtt/#section-mapping']
+    [MappingType.REQUESTS, helpBaseUrl + '/docs/iot-gateway/config/mqtt/#requests-mapping']
   ]
 );
 
@@ -590,13 +748,13 @@ export const ConvertorTypeTranslationsMap = new Map<ConvertorType, string>(
   ]
 );
 
-export enum SourceTypes {
+export enum SourceType {
   MSG = 'message',
   TOPIC = 'topic',
   CONST = 'constant'
 }
 
-export enum OPCUaSourceTypes {
+export enum OPCUaSourceType {
   PATH = 'path',
   IDENTIFIER = 'identifier',
   CONST = 'constant'
@@ -607,33 +765,116 @@ export enum DeviceInfoType {
   PARTIAL = 'partial'
 }
 
-export const SourceTypeTranslationsMap = new Map<SourceTypes | OPCUaSourceTypes, string>(
+export const SourceTypeTranslationsMap = new Map<SourceType | OPCUaSourceType, string>(
   [
-    [SourceTypes.MSG, 'gateway.source-type.msg'],
-    [SourceTypes.TOPIC, 'gateway.source-type.topic'],
-    [SourceTypes.CONST, 'gateway.source-type.const'],
-    [OPCUaSourceTypes.PATH, 'gateway.source-type.path'],
-    [OPCUaSourceTypes.IDENTIFIER, 'gateway.source-type.identifier'],
-    [OPCUaSourceTypes.CONST, 'gateway.source-type.const']
+    [SourceType.MSG, 'gateway.source-type.msg'],
+    [SourceType.TOPIC, 'gateway.source-type.topic'],
+    [SourceType.CONST, 'gateway.source-type.const'],
+    [OPCUaSourceType.PATH, 'gateway.source-type.path'],
+    [OPCUaSourceType.IDENTIFIER, 'gateway.source-type.identifier'],
+    [OPCUaSourceType.CONST, 'gateway.source-type.const']
   ]
 );
 
-export interface RequestMappingData {
+export interface RequestMappingValue {
   requestType: RequestType;
-  requestValue: RequestDataItem;
+  requestValue: RequestMappingData;
 }
 
-export type RequestMappingFormValue = Omit<RequestMappingData, 'requestValue'> & {
-  requestValue: Record<RequestType, RequestDataItem>;
-};
-
-export interface RequestDataItem {
-  type: string;
-  details: string;
+export interface RequestMappingFormValue {
   requestType: RequestType;
-  methodFilter?: string;
-  attributeFilter?: string;
-  topicFilter?: string;
+  requestValue: Record<RequestType, RequestMappingData>;
+}
+
+export type RequestMappingData = ConnectRequest | DisconnectRequest | AttributeRequest | AttributeUpdate | ServerSideRpc;
+
+export type LegacyRequestMappingData =
+  LegacyConnectRequest
+  | LegacyDisconnectRequest
+  | LegacyAttributeRequest
+  | LegacyAttributeUpdate
+  | LegacyServerSideRpc;
+
+export interface ConnectRequest {
+  topicFilter: string;
+  deviceInfo: ConnectorDeviceInfo;
+}
+
+export interface DisconnectRequest {
+  topicFilter: string;
+  deviceInfo: ConnectorDeviceInfo;
+}
+
+export interface AttributeRequest {
+  retain: boolean;
+  topicFilter: string;
+  deviceInfo: ConnectorDeviceInfo;
+  attributeNameExpressionSource: SourceType;
+  attributeNameExpression: string;
+  topicExpression: string;
+  valueExpression: string;
+}
+
+export interface AttributeUpdate {
+  retain: boolean;
+  deviceNameFilter: string;
+  attributeFilter: string;
+  topicExpression: string;
+  valueExpression: string;
+}
+
+export interface ServerSideRpc {
+  type: ServerSideRpcType;
+  deviceNameFilter: string;
+  methodFilter: string;
+  requestTopicExpression: string;
+  responseTopicExpression?: string;
+  responseTopicQoS?: number;
+  responseTimeout?: number;
+  valueExpression: string;
+}
+
+export enum ServerSideRpcType {
+  WithResponse = 'twoWay',
+  WithoutResponse = 'oneWay'
+}
+
+export interface LegacyConnectRequest {
+  topicFilter: string;
+  deviceNameJsonExpression?: string;
+  deviceNameTopicExpression?: string;
+}
+
+interface LegacyDisconnectRequest {
+  topicFilter: string;
+  deviceNameJsonExpression?: string;
+  deviceNameTopicExpression?: string;
+}
+
+interface LegacyAttributeRequest {
+  retain: boolean;
+  topicFilter: string;
+  deviceNameJsonExpression: string;
+  attributeNameJsonExpression: string;
+  topicExpression: string;
+  valueExpression: string;
+}
+
+interface LegacyAttributeUpdate {
+  retain: boolean;
+  deviceNameFilter: string;
+  attributeFilter: string;
+  topicExpression: string;
+  valueExpression: string;
+}
+
+interface LegacyServerSideRpc {
+  deviceNameFilter: string;
+  methodFilter: string;
+  requestTopicExpression: string;
+  responseTopicExpression?: string;
+  responseTimeout?: number;
+  valueExpression: string;
 }
 
 export enum RequestType {
@@ -707,15 +948,36 @@ export enum ServerSideRPCType {
   TWO_WAY = 'twoWay'
 }
 
-export const getDefaultConfig = (resourcesService: ResourcesService, type: string): Observable<any> =>
-  resourcesService.loadJsonResource(`/assets/metadata/connector-default-configs/${type}.json`);
-
 export enum MappingValueType {
   STRING = 'string',
   INTEGER = 'integer',
   DOUBLE = 'double',
   BOOLEAN = 'boolean'
 }
+
+export enum ModifierType {
+  DIVIDER = 'divider',
+  MULTIPLIER = 'multiplier',
+}
+
+export const ModifierTypesMap = new Map<ModifierType, ValueTypeData>(
+  [
+    [
+      ModifierType.DIVIDER,
+      {
+        name: 'gateway.divider',
+        icon: 'mdi:division'
+      }
+    ],
+    [
+      ModifierType.MULTIPLIER,
+      {
+        name: 'gateway.multiplier',
+        icon: 'mdi:multiplication'
+      }
+    ],
+  ]
+);
 
 export const mappingValueTypesMap = new Map<MappingValueType, ValueTypeData>(
   [
@@ -917,8 +1179,12 @@ export const ModbusKeysNoKeysTextTranslationsMap = new Map<ModbusValueKey, strin
   ]
 );
 
-export interface ModbusMasterConfig {
-  slaves: SlaveConfig[];
+export interface ModbusMasterConfig<Slave = SlaveConfig> {
+  slaves: Slave[];
+}
+
+export interface LegacySlaveConfig extends Omit<SlaveConfig, 'reportStrategy'> {
+  sendDataOnlyOnChange: boolean;
 }
 
 export interface SlaveConfig {
@@ -937,8 +1203,8 @@ export interface SlaveConfig {
   pollPeriod: number;
   unitId: number;
   deviceName: string;
-  deviceType: string;
-  sendDataOnlyOnChange: boolean;
+  deviceType?: string;
+  reportStrategy: ReportStrategyConfig;
   connectAttemptTimeMs: number;
   connectAttemptCount: number;
   waitAfterFailedAttemptsMs: number;
@@ -961,6 +1227,14 @@ export interface ModbusValue {
   objectsCount: number;
   address: number;
   value?: string;
+  reportStrategy?: ReportStrategyConfig;
+  multiplier?: number;
+  divider?: number;
+}
+
+export interface ModbusFormValue extends ModbusValue {
+  modifierType?: ModifierType;
+  modifierValue?: string;
 }
 
 export interface ModbusSecurity {
@@ -983,13 +1257,25 @@ export interface ModbusSlave {
   pollPeriod: number;
   sendDataToThingsBoard: boolean;
   byteOrder: ModbusOrderType;
+  wordOrder: ModbusOrderType;
   identity: ModbusIdentity;
-  values: ModbusValuesState;
+  values?: ModbusValuesState;
   port: string | number;
   security: ModbusSecurity;
 }
 
+export interface ModbusLegacySlave extends Omit<ModbusSlave, 'values'> {
+  values?: ModbusLegacyRegisterValues;
+}
+
 export type ModbusValuesState = ModbusRegisterValues | ModbusValues;
+
+export interface ModbusLegacyRegisterValues {
+  holding_registers: ModbusValues[];
+  coils_initializer: ModbusValues[];
+  input_registers: ModbusValues[];
+  discrete_inputs: ModbusValues[];
+}
 
 export interface ModbusRegisterValues {
   holding_registers: ModbusValues;
@@ -1011,6 +1297,11 @@ export interface ModbusIdentity {
   vendorUrl?: string;
   productName?: string;
   modelName?: string;
+}
+
+export interface ReportStrategyConfig {
+  type: ReportStrategyType;
+  reportPeriod?: number;
 }
 
 export const ModbusBaudrates = [4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];

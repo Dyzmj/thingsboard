@@ -22,6 +22,8 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.protobuf.ByteString;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -102,8 +104,6 @@ import org.thingsboard.server.queue.util.TbCoreComponent;
 import org.thingsboard.server.service.apiusage.TbApiUsageStateService;
 import org.thingsboard.server.service.profile.TbDeviceProfileCache;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentMap;
@@ -417,7 +417,8 @@ public class DefaultTransportApiService implements TransportApiService {
                                     requestMsg.getCredentialsDataProto().getValidateDeviceX509CertRequestMsg().getHash()),
                             new ProvisionDeviceProfileCredentials(
                                     requestMsg.getProvisionDeviceCredentialsMsg().getProvisionDeviceKey(),
-                                    requestMsg.getProvisionDeviceCredentialsMsg().getProvisionDeviceSecret())));
+                                    requestMsg.getProvisionDeviceCredentialsMsg().getProvisionDeviceSecret()),
+                            requestMsg.getGateway()));
         } catch (ProvisionFailedException e) {
             return getTransportApiResponseMsg(new DeviceCredentials(), TransportProtos.ResponseStatus.valueOf(e.getMessage()));
         }
@@ -665,7 +666,7 @@ public class DefaultTransportApiService implements TransportApiService {
     private ProvisionRequest createProvisionRequest(String certificateValue) {
         return new ProvisionRequest(null, DeviceCredentialsType.X509_CERTIFICATE,
                 new ProvisionDeviceCredentialsData(null, null, null, null, certificateValue),
-                null);
+                null, null);
     }
 
 }

@@ -33,7 +33,7 @@ import {
   ElementRef,
   EventEmitter,
   HostBinding,
-  Input,
+  Input, NgZone,
   OnDestroy,
   OnInit,
   Output,
@@ -48,7 +48,6 @@ import { AppState } from '@core/core.state';
 import { DialogService } from '@core/services/dialog.service';
 import { FormBuilder } from '@angular/forms';
 import { Direction, SortOrder } from '@shared/models/page/sort-order';
-import { ResizeObserver } from '@juggle/resize-observer';
 import { hidePageSizePixelValue } from '@shared/models/constants';
 import { coerceBoolean } from '@shared/decorators/coercion';
 import { ActivatedRoute, QueryParamsHandling, Router } from '@angular/router';
@@ -197,7 +196,8 @@ export class ImageGalleryComponent extends PageComponent implements OnInit, OnDe
               private importExportService: ImportExportService,
               private elementRef: ElementRef,
               private cd: ChangeDetectorRef,
-              private fb: FormBuilder) {
+              private fb: FormBuilder,
+              private zone: NgZone) {
     super(store);
 
     this.gridImagesFetchFunction = (pageSize, page, filter) => {
@@ -205,7 +205,7 @@ export class ImageGalleryComponent extends PageComponent implements OnInit, OnDe
         property: 'createdTime',
         direction: Direction.DESC
       });
-      return this.imageService.getImages(pageLink, this.imageSubType, filter.includeSystemImages);
+      return this.imageService.getImages(pageLink, filter.includeSystemImages, this.imageSubType);
     };
   }
 
@@ -362,11 +362,13 @@ export class ImageGalleryComponent extends PageComponent implements OnInit, OnDe
   private initListMode() {
     this.destroyListMode$ = new Subject<void>();
     this.widgetResize$ = new ResizeObserver(() => {
-      const showHidePageSize = this.elementRef.nativeElement.offsetWidth < hidePageSizePixelValue;
-      if (showHidePageSize !== this.hidePageSize) {
-        this.hidePageSize = showHidePageSize;
-        this.cd.markForCheck();
-      }
+      this.zone.run(() => {
+        const showHidePageSize = this.elementRef.nativeElement.offsetWidth < hidePageSizePixelValue;
+        if (showHidePageSize !== this.hidePageSize) {
+          this.hidePageSize = showHidePageSize;
+          this.cd.markForCheck();
+        }
+      });
     });
     this.widgetResize$.observe(this.elementRef.nativeElement);
     if (this.pageMode) {
@@ -639,11 +641,15 @@ export class ImageGalleryComponent extends PageComponent implements OnInit, OnDe
   }
 
   rowClick($event, image: ImageResourceInfo) {
-    if (this.selectionMode) {
-      this.selectImage($event, image);
+    if (this.isScada) {
+      this.editImage($event, image);
     } else {
-      if (this.deleteEnabled(image)) {
-        this.dataSource.selection.toggle(image);
+      if (this.selectionMode) {
+        this.selectImage($event, image);
+      } else {
+        if (this.deleteEnabled(image)) {
+          this.dataSource.selection.toggle(image);
+        }
       }
     }
   }
